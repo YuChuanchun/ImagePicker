@@ -15,6 +15,8 @@ import android.graphics.Picture;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.View.OnTouchListener;
@@ -24,6 +26,7 @@ import android.webkit.WebViewClient;
 import android.widget.TextView;
 
 public class WebActivity extends Activity {
+	private static final String TAG = WebActivity.class.getSimpleName();
 	private WebView mWebView;
 	private int mPosition = 0;
 	private ArrayList<String> mUrls = new ArrayList<String>();
@@ -34,6 +37,7 @@ public class WebActivity extends Activity {
 	private String mPromptStr;
 	private View mSaveView;
 	private boolean canClick;
+	private long showNotifStartTime = 0;
 
 	@Override	
 	protected void onCreate(Bundle savedInstanceState) {
@@ -41,12 +45,23 @@ public class WebActivity extends Activity {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_web);
 		mWebView = (WebView) findViewById(R.id.webview);
-		mWebView.getSettings().setBuiltInZoomControls(true);
+//		mWebView.getSettings().setBuiltInZoomControls(true);
+//		mWebView.setScrollBarStyle(WebView.SCROLLBARS_OUTSIDE_OVERLAY);
 		mWebView.getSettings().setJavaScriptEnabled(true);
-		mWebView.setScrollBarStyle(WebView.SCROLLBARS_OUTSIDE_OVERLAY);
 		mWebView.getSettings().setLoadWithOverviewMode(true);
 		mWebView.getSettings().setUseWideViewPort(true);   
 		mWebView.setWebChromeClient(new WebChromeClient());
+
+		mWebView.setWebChromeClient(new WebChromeClient() {
+			public void onProgressChanged(WebView view, int progress) {
+			}
+		});
+		mWebView.setWebViewClient(new WebViewClient() {
+			public void onReceivedError(WebView view, int errorCode,
+					String description, String failingUrl) {
+				Log.d(TAG, "WebView onReceivedError: " + description);
+			}
+		});
 
 		mTxt = (TextView) findViewById(R.id.txt);
 		mBtn = (TextView) findViewById(R.id.btn);
@@ -112,9 +127,13 @@ public class WebActivity extends Activity {
 			@Override
 			public void onPageFinished(WebView view, String url) {
 				super.onPageFinished(view, url);
-				if (!WebActivity.this.isFinishing()) {
-					new SaveImageTask().execute();
-				}
+				new Handler().postDelayed(new Runnable() {
+					public void run() {
+						if (!WebActivity.this.isFinishing()) {
+							new SaveImageTask().execute();
+						}
+					}
+				}, 300);
 			}
 			
 		});
@@ -149,6 +168,11 @@ public class WebActivity extends Activity {
 		String time = (mUseTime * (mUrls.size() - mPosition) / (mPosition + 1)) / 1000 / 60 + "分钟";
 		mPromptStr = txt +  "  预计还有" + time + "完成";
 		mTxt.setText(mPromptStr);
+		long curTime = System.currentTimeMillis();
+		if (showNotifStartTime == 0 || curTime - showNotifStartTime > Const.NOTIFICATION_INTERVAL) {
+			showNotifStartTime = curTime;
+			Utils.showNotification(this, mPromptStr);
+		}
 	}
 
 	/**
@@ -158,11 +182,11 @@ public class WebActivity extends Activity {
 	 */
 	private Bitmap captureWebView(){
 		Picture snapShot = mWebView.capturePicture();
-		
-		Bitmap bmp = Bitmap.createBitmap(snapShot.getWidth(),snapShot.getHeight(), Bitmap.Config.ARGB_8888);
+		Bitmap bmp = Bitmap.createBitmap(snapShot.getWidth(), snapShot.getHeight(), Bitmap.Config.ARGB_8888);
 		Canvas canvas = new Canvas(bmp);
 		snapShot.draw(canvas);
-		return bmp;
+		int h = snapShot.getWidth() * mWebView.getHeight() / mWebView.getWidth();
+		return Bitmap.createBitmap(bmp, 0, 0, snapShot.getWidth(), h);
 	}
 	
     /**
@@ -171,9 +195,13 @@ public class WebActivity extends Activity {
      * @return
      */
 	private Bitmap captureWebViewVisibleSize(){
-		mWebView.setDrawingCacheEnabled(true);
-		mWebView.buildDrawingCache();
-		Bitmap bmp = mWebView.getDrawingCache();
+//		mWebView.setDrawingCacheEnabled(true);
+//		mWebView.buildDrawingCache();
+//		Bitmap bmp = mWebView.getDrawingCache();
+
+		Bitmap bmp = Bitmap.createBitmap(mWebView.getWidth(), mWebView.getHeight(), Bitmap.Config.ARGB_8888);
+		Canvas canvas = new Canvas(bmp);
+		mWebView.draw(canvas);
 		return bmp;
 	}
 	
@@ -208,13 +236,13 @@ public class WebActivity extends Activity {
 //			dialog = new ProgressDialog(WebActivity.this);
 //			dialog.setMessage("正在保存图片...");
 //			dialog.show();
-			mSaveView.setVisibility(View.VISIBLE);
+//			mSaveView.setVisibility(View.VISIBLE);
 		}
 		
 		@Override
 		protected Bitmap doInBackground(Void... arg0) {
 			// TODO Auto-generated method stub
-			Bitmap bm = captureWebView();
+			Bitmap bm = captureWebViewVisibleSize();
 			try {
 				saveBitmap(bm);
 			} catch (IOException e) {

@@ -57,4 +57,14 @@ public class Utils {
 		}
 		return true;
     }
+    
+    public static void showNotification(Context context, String content) {
+		NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+		Notification n = new Notification(R.drawable.ic_launcher, content, System.currentTimeMillis());
+		n.flags = Notification.FLAG_AUTO_CANCEL;
+//		n.defaults = Notification.DEFAULT_SOUND;
+		nm.cancel(R.string.app_name);
+		n.setLatestEventInfo(context, "ImagePicker", content, null);
+		nm.notify(R.string.app_name, n);
+    }
 }

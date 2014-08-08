@@ -20,7 +20,8 @@
         android:layout_height="45dp"
         android:layout_alignParentBottom="true"
         android:background="#60000000"
-        android:paddingLeft="10dp" >
+        android:paddingLeft="10dp"
+        android:visibility="gone" >
 
         <TextView
             android:id="@+id/txt"
