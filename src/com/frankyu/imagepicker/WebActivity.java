@@ -270,7 +270,8 @@ public class WebActivity extends Activity {
 
 	private void showCompleteDialog() {
 		new AlertDialog.Builder(this)
-			.setMessage("任务完成，请在sd卡下imagepicker文件夹中查看结果。")
+			.setTitle("任务完成")
+			.setMessage("请在sd卡下imagepicker文件夹中查看结果。")
 			.setCancelable(false)
 			.setPositiveButton("确定", new OnClickListener() {
 				
@@ -284,10 +285,6 @@ public class WebActivity extends Activity {
 			.show();
 	}
 
-	private void showFailListDialog() {
-		
-	}
-	
 	private class SaveImageTask extends AsyncTask<Void, Void, Bitmap> {
 //		private ProgressDialog dialog;
 		Bitmap bm;
@@ -323,8 +320,8 @@ public class WebActivity extends Activity {
 			if (!WebActivity.this.isFinishing()) {
 //				dialog.dismiss();
 				mSaveView.setVisibility(View.INVISIBLE);
-				setPromptString((mPosition + 1) + "/" + mUrls.size());
 				mUseTime += System.currentTimeMillis() - mStartTime;
+				setPromptString((mPosition + 1) + "/" + mUrls.size());
 				if (mUrls != null && mPosition < mUrls.size() - 1) {
 					mPosition = mPosition + 1;
 					loadUrl();
