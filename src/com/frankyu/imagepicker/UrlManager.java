@@ -10,6 +10,7 @@ import android.app.ProgressDialog;
 import android.content.Context;
 import android.os.AsyncTask;
 import android.text.TextUtils;
+import android.util.Log;
 import android.widget.Toast;
 
 public class UrlManager {
@@ -85,6 +86,7 @@ public class UrlManager {
 			// TODO Auto-generated method stub
 			super.onPostExecute(result);
 			dialog.dismiss();
+			Log.d("UrlManager", "Urls size: " + mUrls.size());
 		}
 	}
 }

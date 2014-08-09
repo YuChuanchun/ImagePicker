@@ -14,6 +14,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Picture;
+import android.net.http.SslError;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
@@ -23,6 +24,8 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.View.OnTouchListener;
 import android.view.WindowManager;
+import android.webkit.HttpAuthHandler;
+import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -32,16 +35,20 @@ public class WebActivity extends Activity {
 	private static final String TAG = WebActivity.class.getSimpleName();
 	private WebView mWebView;
 	private int mPosition = 0;
+	private int mFailedPosition = 0;
 	private ArrayList<String> mUrls = new ArrayList<String>();
+	private ArrayList<Integer> mTmpFailedUrlPositions = new ArrayList<Integer>();
+	private ArrayList<Integer> mFailedUrlPositions = new ArrayList<Integer>();
 	private TextView mTxt, mBtn;
 	private long mUseTime;
 	private long mStartTime;
-	private boolean mPause = false;
+	private boolean mPause = false, mStop = false;;
 	private String mPromptStr;
 	private View mSaveView;
 	private boolean canClick;
 	private long showNotifStartTime = 0;
-	private boolean loadFinish = false;
+	private boolean loadUrlFinish = false;
+	private boolean loadingFailedUrls = false;
 	private Handler mHandler = new Handler() {
 
 		@Override
@@ -51,6 +58,12 @@ public class WebActivity extends Activity {
 			case 0:
 				Bitmap bm = captureWebViewVisibleSize();
 				new SaveImageTask(bm).execute();
+				break;
+			case 1:
+				loadUrl();
+				break;
+			case 2:
+				showCompleteDialog();
 				break;
 			}
 		}
@@ -71,8 +84,7 @@ public class WebActivity extends Activity {
 //		mWebView.setScrollBarStyle(WebView.SCROLLBARS_OUTSIDE_OVERLAY);
 		mWebView.getSettings().setJavaScriptEnabled(true);
 		mWebView.getSettings().setLoadWithOverviewMode(true);
-		mWebView.getSettings().setUseWideViewPort(true);   
-		mWebView.setWebChromeClient(new WebChromeClient());
+		mWebView.getSettings().setUseWideViewPort(true);
 
 		mWebView.setWebChromeClient(new WebChromeClient() {
 			public void onProgressChanged(WebView view, int progress) {
@@ -80,6 +92,22 @@ public class WebActivity extends Activity {
 			}
 		});
 		mWebView.setWebViewClient(new WebViewClient() {
+			@Override
+			public void onReceivedHttpAuthRequest(WebView view,
+					HttpAuthHandler handler, String host, String realm) {
+				// TODO Auto-generated method stub
+				super.onReceivedHttpAuthRequest(view, handler, host, realm);
+				Log.d(TAG, "WebView onReceivedHttpAuthRequest");
+			}
+
+			@Override
+			public void onReceivedSslError(WebView view,
+					SslErrorHandler handler, SslError error) {
+				// TODO Auto-generated method stub
+				super.onReceivedSslError(view, handler, error);
+				Log.d(TAG, "WebView onReceivedSslError");
+			}
+
 			public void onReceivedError(WebView view, int errorCode,
 					String description, String failingUrl) {
 				Log.d(TAG, "WebView onReceivedError: " + description);
@@ -129,9 +157,6 @@ public class WebActivity extends Activity {
 
 			@Override
 			public boolean shouldOverrideUrlLoading(WebView view, String url) {
-				if (url.equals(mUrls.get(mPosition))) {
-					view.loadUrl(url);
-				}
 				return true;
 			}
 
@@ -143,7 +168,10 @@ public class WebActivity extends Activity {
 			@Override
 			public void onPageFinished(WebView view, String url) {
 				super.onPageFinished(view, url);
-				loadFinish = true;
+				if (!url.equals("www.baidu.com")) {
+					loadUrlFinish = true;
+				}
+				Log.d(TAG, "onPageFinished: " + url);
 			}
 			
 		});
@@ -151,13 +179,28 @@ public class WebActivity extends Activity {
 		loadUrl();
 		new Thread() {
 			public void run() {
-				while (!mPause) {
+				int count = 0;
+				while (!mStop) {
 					try {
 						Thread.sleep(1000);
-						if (loadFinish && !mPause) {
-							loadFinish = false;
+						if (loadUrlFinish && !mPause) {
+							loadUrlFinish = false;
+							count = 0;
 							mHandler.sendEmptyMessage(0);
 						}
+						if (!mPause) count++;
+						if (count > 20) {
+							mTmpFailedUrlPositions.add(mPosition);
+							Log.d(TAG, "Add to mTmpFailedUrlPositions: " + mPosition);
+							count = 0;
+							if (mPosition < mUrls.size() - 1) {
+								mPosition = mPosition + 1;
+								mHandler.sendEmptyMessage(1);
+							} else {
+								mHandler.sendEmptyMessage(2);
+							}
+						}
+						Log.d(TAG, "loadFinish: " + loadUrlFinish + "mPause:" + mPause);
 					} catch (InterruptedException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
@@ -180,6 +223,54 @@ public class WebActivity extends Activity {
 		super.onResume();
 		Log.d(TAG, "onResume");
 	}
+	
+	@Override
+	protected void onDestroy() {
+		// TODO Auto-generated method stub
+		super.onDestroy();
+		mStop = true;
+	}
+
+	private void loadFailedUrls() {
+		loadingFailedUrls = true;
+		mFailedUrlPositions.clear();
+		mFailedUrlPositions.addAll(mTmpFailedUrlPositions);
+		mTmpFailedUrlPositions.clear();
+		mFailedPosition = 0;
+		loadUrl();
+		setPromptString((mFailedPosition + 1) + "/" + mFailedUrlPositions.size());
+		new Thread() {
+			public void run() {
+				int count = 0;
+				mStop = false;
+				while (!mStop) {
+					try {
+						Thread.sleep(1000);
+						if (loadUrlFinish && !mPause) {
+							loadUrlFinish = false;
+							count = 0;
+							mHandler.sendEmptyMessage(0);
+						}
+						if (!mPause) count++;
+						if (count > 20) {
+							mTmpFailedUrlPositions.add(mFailedUrlPositions.get(mFailedPosition));
+							count = 0;
+							if (mFailedPosition < mFailedUrlPositions.size() - 1) {
+								mFailedPosition = mFailedPosition + 1;
+								mHandler.sendEmptyMessage(1);
+							} else {
+								mHandler.sendEmptyMessage(2);
+							}
+						}
+						Log.d(TAG, "loadFinish: " + loadUrlFinish + "mPause:" + mPause);
+					} catch (InterruptedException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+				}
+			}
+		}.start();
+	}
 
 	public void onViewClick(View v) {
 		switch(v.getId()) {
@@ -193,9 +284,15 @@ public class WebActivity extends Activity {
 	
 	private void loadUrl() {
 		if (mPause) return;
-		loadFinish = false;
+		loadUrlFinish = false;
 		mStartTime = System.currentTimeMillis();
-		mWebView.loadUrl(mUrls.get(mPosition));
+		if (!loadingFailedUrls) {
+			mWebView.loadUrl(mUrls.get(mPosition));
+			Log.d(TAG, "loading url: " + mUrls.get(mPosition));
+		} else {
+			mWebView.loadUrl(mUrls.get(mFailedUrlPositions.get(mFailedPosition)));
+			Log.d(TAG, "loading fialed url: " + mUrls.get(mFailedUrlPositions.get(mFailedPosition)));
+		}
 	}
 	
 	private Bitmap takeScreenShot() {
@@ -206,7 +303,11 @@ public class WebActivity extends Activity {
 	}
 
 	private void setPromptString(String txt) {
-		String time = (mUseTime * (mUrls.size() - mPosition) / (mPosition + 1)) / 1000 / 60 + "分钟";
+		String time = "";
+		if (!loadingFailedUrls)
+			time = (mUseTime * (mUrls.size() - mPosition) / (mPosition + 1)) / 1000 / 60 + "分钟";
+		else
+			time = (mUseTime * (mFailedUrlPositions.size() - mFailedPosition) / (mFailedPosition + 1)) / 1000 / 60 + "分钟";
 		mPromptStr = txt +  "  预计还有" + time + "完成";
 		mTxt.setText(mPromptStr);
 		long curTime = System.currentTimeMillis();
@@ -249,7 +350,8 @@ public class WebActivity extends Activity {
 	public void saveBitmap(Bitmap bm) throws IOException {
 		File folder = new File(Const.SAVE_PATH);
 		if (!folder.exists()) folder.mkdir();
-        File f = new File(Const.SAVE_PATH + (mPosition + 1) + Const.IMAGE_SUFFIX);
+		int position = loadingFailedUrls ? mFailedUrlPositions.get(mFailedPosition) : mPosition;
+        File f = new File(Const.SAVE_PATH + (position + 1) + Const.IMAGE_SUFFIX);
 
         FileOutputStream fos = null;
         try {
@@ -269,11 +371,37 @@ public class WebActivity extends Activity {
     }
 
 	private void showCompleteDialog() {
-		new AlertDialog.Builder(this)
-			.setTitle("任务完成")
-			.setMessage("请在sd卡下imagepicker文件夹中查看结果。")
+		mStop = true;
+		if (mTmpFailedUrlPositions.size() <= 0) {
+			loadingFailedUrls = false;
+			new AlertDialog.Builder(this)
+				.setTitle("任务全部完成")
+				.setMessage("请在sd卡下imagepicker文件夹中查看结果。")
+				.setCancelable(false)
+				.setPositiveButton("确定", new OnClickListener() {
+					
+					@Override
+					public void onClick(DialogInterface arg0, int arg1) {
+						// TODO Auto-generated method stub
+						finish();
+					}
+				})
+				.create()
+				.show();
+		} else {
+			new AlertDialog.Builder(this)
+			.setTitle("任务未全部完成")
+			.setMessage("您有" + mTmpFailedUrlPositions.size() + "条数据加载失败或者超时，是否重新加载失败项？")
 			.setCancelable(false)
-			.setPositiveButton("确定", new OnClickListener() {
+			.setPositiveButton("重新加载失败项", new OnClickListener() {
+				
+				@Override
+				public void onClick(DialogInterface arg0, int arg1) {
+					// TODO Auto-generated method stub
+					loadFailedUrls();
+				}
+			})
+			.setNegativeButton("退出", new OnClickListener() {
 				
 				@Override
 				public void onClick(DialogInterface arg0, int arg1) {
@@ -283,6 +411,7 @@ public class WebActivity extends Activity {
 			})
 			.create()
 			.show();
+		}
 	}
 
 	private class SaveImageTask extends AsyncTask<Void, Void, Bitmap> {
@@ -321,13 +450,24 @@ public class WebActivity extends Activity {
 //				dialog.dismiss();
 				mSaveView.setVisibility(View.INVISIBLE);
 				mUseTime += System.currentTimeMillis() - mStartTime;
-				setPromptString((mPosition + 1) + "/" + mUrls.size());
-				if (mUrls != null && mPosition < mUrls.size() - 1) {
-					mPosition = mPosition + 1;
-					loadUrl();
-				}
-				if (mPosition == mUrls.size() - 1) {
-					showCompleteDialog();
+				if (!loadingFailedUrls) {
+					setPromptString((mPosition + 1) + "/" + mUrls.size());
+					if (mPosition < mUrls.size() - 1) {
+						mPosition = mPosition + 1;
+						loadUrl();
+					}
+					if (mPosition == mUrls.size() - 1) {
+						showCompleteDialog();
+					}
+				} else {
+					setPromptString((mFailedPosition + 1) + "/" + mFailedUrlPositions.size());
+					if (mFailedPosition < mFailedUrlPositions.size() - 1) {
+						mFailedPosition = mFailedPosition + 1;
+						loadUrl();
+					}
+					if (mFailedPosition == mFailedUrlPositions.size() - 1) {
+						showCompleteDialog();
+					}
 				}
 			}
 		}
