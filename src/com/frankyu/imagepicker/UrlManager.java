@@ -35,6 +35,7 @@ public class UrlManager {
 
 	public void loadData(String path) {
 		mFilePath = path;
+		mUrls.clear();
 		new GetUrlTask().execute();
 	}
 

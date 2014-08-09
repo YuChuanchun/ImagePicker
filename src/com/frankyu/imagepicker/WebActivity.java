@@ -7,19 +7,22 @@ import java.io.IOException;
 import java.util.ArrayList;
 
 import android.app.Activity;
-import android.content.Intent;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
+import android.content.DialogInterface.OnClickListener;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Picture;
-import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Message;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.View.OnTouchListener;
+import android.view.WindowManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -38,12 +41,31 @@ public class WebActivity extends Activity {
 	private View mSaveView;
 	private boolean canClick;
 	private long showNotifStartTime = 0;
+	private boolean loadFinish = false;
+	private Handler mHandler = new Handler() {
+
+		@Override
+		public void handleMessage(Message msg) {
+			// TODO Auto-generated method stub
+			switch(msg.what) {
+			case 0:
+				Bitmap bm = captureWebViewVisibleSize();
+				new SaveImageTask(bm).execute();
+				break;
+			}
+		}
+		
+	};
 
 	@Override	
 	protected void onCreate(Bundle savedInstanceState) {
 		// TODO Auto-generated method stub
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_web);
+
+		//保持屏幕唤醒
+		getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
 		mWebView = (WebView) findViewById(R.id.webview);
 //		mWebView.getSettings().setBuiltInZoomControls(true);
 //		mWebView.setScrollBarStyle(WebView.SCROLLBARS_OUTSIDE_OVERLAY);
@@ -54,6 +76,7 @@ public class WebActivity extends Activity {
 
 		mWebView.setWebChromeClient(new WebChromeClient() {
 			public void onProgressChanged(WebView view, int progress) {
+				Log.d(TAG, "WebView onProgressChanged: " + progress);
 			}
 		});
 		mWebView.setWebViewClient(new WebViewClient() {
@@ -106,15 +129,8 @@ public class WebActivity extends Activity {
 
 			@Override
 			public boolean shouldOverrideUrlLoading(WebView view, String url) {
-				if (url.contains("http")) {
+				if (url.equals(mUrls.get(mPosition))) {
 					view.loadUrl(url);
-				} else {
-					if (url.startsWith("tel")) {
-						Uri uri = Uri.parse(url);
-						Intent intent = new Intent(Intent.ACTION_DIAL, uri);
-						intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-						startActivity(intent);
-					}
 				}
 				return true;
 			}
@@ -127,20 +143,44 @@ public class WebActivity extends Activity {
 			@Override
 			public void onPageFinished(WebView view, String url) {
 				super.onPageFinished(view, url);
-				new Handler().postDelayed(new Runnable() {
-					public void run() {
-						if (!WebActivity.this.isFinishing()) {
-							new SaveImageTask().execute();
-						}
-					}
-				}, 300);
+				loadFinish = true;
 			}
 			
 		});
 		
 		loadUrl();
+		new Thread() {
+			public void run() {
+				while (!mPause) {
+					try {
+						Thread.sleep(1000);
+						if (loadFinish && !mPause) {
+							loadFinish = false;
+							mHandler.sendEmptyMessage(0);
+						}
+					} catch (InterruptedException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+				}
+			}
+		}.start();
 	}
-	
+
+	@Override
+	protected void onPause() {
+		// TODO Auto-generated method stub
+		super.onPause();
+		Log.d(TAG, "onPause");
+	}
+
+	@Override
+	protected void onResume() {
+		// TODO Auto-generated method stub
+		super.onResume();
+		Log.d(TAG, "onResume");
+	}
+
 	public void onViewClick(View v) {
 		switch(v.getId()) {
 		case R.id.btn:
@@ -153,6 +193,7 @@ public class WebActivity extends Activity {
 	
 	private void loadUrl() {
 		if (mPause) return;
+		loadFinish = false;
 		mStartTime = System.currentTimeMillis();
 		mWebView.loadUrl(mUrls.get(mPosition));
 	}
@@ -226,9 +267,33 @@ public class WebActivity extends Activity {
             e.printStackTrace();
         }
     }
+
+	private void showCompleteDialog() {
+		new AlertDialog.Builder(this)
+			.setMessage("任务完成，请在sd卡下imagepicker文件夹中查看结果。")
+			.setCancelable(false)
+			.setPositiveButton("确定", new OnClickListener() {
+				
+				@Override
+				public void onClick(DialogInterface arg0, int arg1) {
+					// TODO Auto-generated method stub
+					finish();
+				}
+			})
+			.create()
+			.show();
+	}
+
+	private void showFailListDialog() {
+		
+	}
 	
 	private class SaveImageTask extends AsyncTask<Void, Void, Bitmap> {
 //		private ProgressDialog dialog;
+		Bitmap bm;
+		public SaveImageTask(Bitmap bm) {
+			this.bm = bm;
+		}
 		
 		@Override
 		protected void onPreExecute() {
@@ -242,7 +307,6 @@ public class WebActivity extends Activity {
 		@Override
 		protected Bitmap doInBackground(Void... arg0) {
 			// TODO Auto-generated method stub
-			Bitmap bm = captureWebViewVisibleSize();
 			try {
 				saveBitmap(bm);
 			} catch (IOException e) {
@@ -264,6 +328,9 @@ public class WebActivity extends Activity {
 				if (mUrls != null && mPosition < mUrls.size() - 1) {
 					mPosition = mPosition + 1;
 					loadUrl();
+				}
+				if (mPosition == mUrls.size() - 1) {
+					showCompleteDialog();
 				}
 			}
 		}
